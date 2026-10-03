@@ -1,0 +1,5 @@
+# Keep LF in the repo and in working trees on every OS (fixtures are byte-compared JSONL;
+# a Windows checkout with core.autocrlf must not rewrite them).
+* text=auto eol=lf
+*.png binary
+*.ico binary

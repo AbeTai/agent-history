@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Python deps
+        run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check src tests
+      - name: Type check (all target platforms)
+        run: |
+          uv run mypy --platform darwin
+          uv run mypy --platform win32
+          uv run mypy --platform linux
+      - name: Python tests
+        run: uv run pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Web deps
+        working-directory: web
+        run: npm ci
+      - name: Web tests
+        working-directory: web
+        run: npm test
+      - name: Web build (includes tsc)
+        working-directory: web
+        run: npm run build
+      - name: CLI smoke (no history on a fresh runner)
+        run: |
+          uv run agent-history ingest
+          uv run agent-history status
+
+  # Real scheduler round-trips on hosted runners (the unit tests only use fakes).
+  windows-task-scheduler:
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - name: Register the task
+        run: uv run agent-history schedule install --interval 3600
+      - name: Inspect the registered task
+        run: |
+          schtasks /Query /TN agent-history-ingest /V /FO LIST
+          uv run agent-history status
+          if ($LASTEXITCODE -ne 0) { "status is NG until the first run (expected)" }
+          exit 0
+      - name: Run the task and wait for a scheduled ingest in the run log
+        run: |
+          schtasks /Run /TN agent-history-ingest
+          $log = "data/logs/ingest.jsonl"
+          $deadline = (Get-Date).AddSeconds(120)
+          while ((Get-Date) -lt $deadline) {
+            if ((Test-Path $log) -and (Select-String -Path $log -Pattern '"trigger": "scheduled"' -Quiet)) { break }
+            Start-Sleep -Seconds 3
+          }
+          schtasks /Query /TN agent-history-ingest /V /FO LIST | Select-String "Last Result|Status"
+          if (-not (Test-Path $log)) { throw "the scheduled run produced no log" }
+          Get-Content $log
+          if (-not (Select-String -Path $log -Pattern '"trigger": "scheduled"' -Quiet)) { throw "no scheduled run recorded" }
+      - name: Status after the scheduled run
+        run: uv run agent-history status
+      - name: Re-install is idempotent, uninstall removes it
+        run: |
+          uv run agent-history schedule install
+          uv run agent-history schedule uninstall
+          schtasks /Query /TN agent-history-ingest 2>$null
+          if ($LASTEXITCODE -eq 0) { throw "task still registered" }
+          exit 0
+
+  linux-cron:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - name: Ensure crontab is available
+        run: command -v crontab || (sudo apt-get update && sudo apt-get install -y cron)
+      - name: Install, inspect, uninstall
+        run: |
+          (echo "15 3 * * * echo keep-me") | crontab -
+          uv run agent-history schedule install
+          crontab -l
+          crontab -l | grep -q "agent-history (managed block"
+          crontab -l | grep -q "keep-me"
+          uv run agent-history status || true
+          uv run agent-history schedule uninstall
+          crontab -l
+          if crontab -l | grep -q "agent-history (managed block"; then echo "block not removed"; exit 1; fi
+          crontab -l | grep -q "keep-me"
