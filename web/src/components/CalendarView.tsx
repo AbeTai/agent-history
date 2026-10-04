@@ -11,9 +11,11 @@ const STRIPE_PX = 6
 
 interface Props {
   sessions: SessionSummary[]
-  weekStart: Date
-  /** Week the `sessions` were fetched for; scrolling waits until it matches. */
-  loadedWeek: number
+  /** Columns to draw: one day (day view) or seven (week view). */
+  days: Date[]
+  /** Identifies the period on screen and the period `sessions` belong to; scrolling waits until they match. */
+  periodKey: string
+  loadedKey: string
   now: number
   hourHeight: number
   colorOf: (s: SessionSummary) => string
@@ -29,48 +31,57 @@ interface Hover {
   y: number
 }
 
-export function CalendarView({ sessions, weekStart, loadedWeek, now, hourHeight, colorOf, selectedId, onSelect }: Props) {
+export function CalendarView({
+  sessions,
+  days,
+  periodKey,
+  loadedKey,
+  now,
+  hourHeight,
+  colorOf,
+  selectedId,
+  onSelect,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<Hover | null>(null)
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
-  const weekStartMs = weekStart.getTime()
+  const firstDayMs = days[0].getTime()
 
   const byDay = useMemo(() => {
     const minDur = (MIN_BLOCK_PX / hourHeight) * H
     const perDay: { session: SessionSummary; start: number; end: number }[][] = days.map(() => [])
     for (const s of sessions) {
-      for (const piece of splitIntoDays(s.segments, weekStartMs)) {
+      for (const piece of splitIntoDays(s.segments, firstDayMs, days.length)) {
         perDay[piece.day].push({ session: s, start: piece.start, end: piece.end })
       }
     }
     return perDay.map((blocks) => layoutDay(blocks, minDur))
-  }, [sessions, days, weekStartMs, hourHeight])
+  }, [sessions, days, firstDayMs, hourHeight])
 
   const heat = useMemo(() => {
     const times = sessions.flatMap((s) => s.prompt_times)
     return days.map((d) => bucketCounts(times, d.getTime()))
   }, [sessions, days])
 
-  // Once per week, when its data has arrived: scroll to the first activity (or 8:00).
-  const scrolledFor = useRef<number | null>(null)
+  // Once per period, when its data has arrived: scroll to the first activity (or 8:00).
+  const scrolledFor = useRef<string | null>(null)
   useEffect(() => {
     const el = scrollRef.current
-    if (!el || loadedWeek !== weekStartMs || scrolledFor.current === weekStartMs) return
-    scrolledFor.current = weekStartMs
+    if (!el || loadedKey !== periodKey || scrolledFor.current === periodKey) return
+    scrolledFor.current = periodKey
     const starts = byDay.flatMap((blocks, i) => blocks.map((b) => b.start - days[i].getTime()))
     const first = starts.length ? Math.min(...starts) : 8 * H
     el.scrollTop = Math.max(0, (first / H - 1) * hourHeight)
-  }, [loadedWeek, weekStartMs, byDay, days, hourHeight])
+  }, [loadedKey, periodKey, byDay, days, hourHeight])
 
   const todayIndex = days.findIndex((d) => now >= d.getTime() && now < addDays(d, 1).getTime())
 
   return (
-    <div className="calendar">
+    <div className="calendar" style={{ ['--cols' as string]: days.length }}>
       <div className="cal-head">
         <div className="cal-gutter" />
         {days.map((d, i) => (
           <div key={i} className={`cal-day-head${i === todayIndex ? ' today' : ''}`}>
-            <span className="dow">{WEEKDAYS[i]}</span>
+            <span className="dow">{WEEKDAYS[(d.getDay() + 6) % 7]}</span>
             <span className="date">
               {d.getMonth() + 1}/{d.getDate()}
             </span>

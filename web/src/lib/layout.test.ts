@@ -16,6 +16,10 @@ describe('splitIntoDays', () => {
       { day: 1, start: monday + 24 * H, end: monday + 25 * H },
     ])
   })
+  it('supports any number of days (day view = 1 column)', () => {
+    const pieces = splitIntoDays([[monday + 23 * H, monday + 25 * H]], monday + 24 * H, 1)
+    expect(pieces).toEqual([{ day: 0, start: monday + 24 * H, end: monday + 25 * H }])
+  })
   it('clips to the week and drops segments outside it', () => {
     const pieces = splitIntoDays(
       [

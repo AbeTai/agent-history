@@ -7,11 +7,13 @@ const SOURCE_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const
 interface Props {
   state: State
   health: Health | null
+  /** 日 / 週 / 月 */
+  periodUnit: string
   onJump: (ms: number) => void
   onClearFilters: () => void
 }
 
-export function EmptyState({ state, health, onJump, onClearFilters }: Props) {
+export function EmptyState({ state, health, periodUnit, onJump, onClearFilters }: Props) {
   if (state.kind === 'filtered') {
     return (
       <div className="empty-state">
@@ -25,9 +27,9 @@ export function EmptyState({ state, health, onJump, onClearFilters }: Props) {
   if (state.kind === 'empty-week') {
     return (
       <div className="empty-state">
-        <p>この週のセッションはありません。</p>
+        <p>この{periodUnit}のセッションはありません。</p>
         <button className="btn" onClick={() => onJump(state.latest)}>
-          最新の活動（{fmtDateTime(state.latest)}）の週へ
+          最新の活動（{fmtDateTime(state.latest)}）の{periodUnit}へ
         </button>
       </div>
     )
@@ -36,7 +38,7 @@ export function EmptyState({ state, health, onJump, onClearFilters }: Props) {
   return (
     <div className="empty-state">
       <h3>まだ履歴がありません</h3>
-      <p>Claude Code / Codex のセッション履歴を取り込むと、ここに週カレンダーとして表示されます。</p>
+      <p>Claude Code / Codex のセッション履歴を取り込むと、ここにカレンダーとして表示されます。</p>
       {sources.length > 0 && (
         <ul className="plain sources">
           {sources.map((s) => (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarView } from './components/CalendarView'
 import { DetailPane } from './components/DetailPane'
+import { MonthView } from './components/MonthView'
 import { EmptyState } from './components/EmptyState'
 import { ListView } from './components/ListView'
 import { SORTS, type SortKey, sortSessions } from './lib/sort'
@@ -8,7 +9,8 @@ import { UsageMeters } from './components/UsageMeters'
 import { fetchDetail, fetchHealth, fetchSessions, fetchUsage, triggerIngest } from './lib/api'
 import { AXES, type ColorAxis, STATUS_LABEL, buildLegend, colorLookup } from './lib/color'
 import { emptyState } from './lib/empty'
-import { addDays, fmtDateTime, startOfWeek, weekLabel } from './lib/time'
+import { type Span, SPANS, isCurrentPeriod, periodLabel, periodRange, shiftAnchor } from './lib/period'
+import { fmtDateTime } from './lib/time'
 import type { Health, SessionDetail, SessionSummary, Status, Usage } from './lib/types'
 
 const DEFAULT_HOUR_PX = 44
@@ -39,7 +41,9 @@ function usePref<T>(key: string, fallback: T) {
 }
 
 export default function App() {
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
+  // Any date inside the period on screen; the span decides which day/week/month that is.
+  const [anchor, setAnchor] = useState(() => new Date())
+  const [span, setSpan] = usePref<Span>('span', 'week')
   const [view, setView] = usePref<'calendar' | 'list'>('view', 'calendar')
   const [axis, setAxis] = usePref<ColorAxis>('axis', 'project')
   const [hourPx, setHourPx] = usePref('hourPx', DEFAULT_HOUR_PX)
@@ -49,11 +53,11 @@ export default function App() {
   const [project, setProject] = useState('')
 
   const [loaded, setLoaded] = useState<{
-    week: number
+    key: string
     sessions: SessionSummary[]
     total: number
     latest: number | null
-  }>({ week: -1, sessions: [], total: -1, latest: null })
+  }>({ key: '', sessions: [], total: -1, latest: null })
   const [loadError, setLoadError] = useState<string | null>(null)
   const [usage, setUsage] = useState<Usage | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
@@ -66,15 +70,17 @@ export default function App() {
   // Detail result tagged with the id it belongs to; anything else counts as loading.
   const [detailState, setDetailState] = useState<{ id: string; data?: SessionDetail; error?: string } | null>(null)
 
-  const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart])
+  const period = useMemo(() => periodRange(span, anchor), [span, anchor])
+  const periodKey = `${span}:${period.start.getTime()}`
+  const spanInfo = SPANS.find((x) => x.key === span)!
 
   useEffect(() => {
     let cancelled = false
-    fetchSessions(weekStart.getTime(), weekEnd.getTime(), showSubagents)
+    fetchSessions(period.start.getTime(), period.end.getTime(), showSubagents)
       .then((r) => {
         if (cancelled) return
         setLoaded({
-          week: weekStart.getTime(),
+          key: periodKey,
           sessions: r.sessions,
           total: r.total_sessions,
           latest: r.latest_activity_at,
@@ -86,7 +92,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [weekStart, weekEnd, showSubagents, reloadKey])
+  }, [period, periodKey, showSubagents, reloadKey])
 
   useEffect(() => {
     fetchUsage().then(setUsage).catch(() => setUsage(null))
@@ -111,18 +117,25 @@ export default function App() {
   }, [selectedId, reloadKey])
   const current = detailState && detailState.id === selectedId ? detailState : null
 
-  const shiftWeek = useCallback((n: number) => setWeekStart((w) => addDays(w, 7 * n)), [])
+  const shift = useCallback((n: number) => setAnchor((a) => shiftAnchor(span, a, n)), [span])
+  const openDay = useCallback(
+    (day: Date) => {
+      setAnchor(day)
+      setSpan('day')
+    },
+    [setSpan],
+  )
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
-      if (e.key === 'ArrowLeft') shiftWeek(-1)
-      else if (e.key === 'ArrowRight') shiftWeek(1)
+      if (e.key === 'ArrowLeft') shift(-1)
+      else if (e.key === 'ArrowRight') shift(1)
       else if (e.key === 'Escape') setSelectedId(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [shiftWeek])
+  }, [shift])
 
   const reingest = async () => {
     setIngesting(true)
@@ -143,7 +156,7 @@ export default function App() {
   }
 
   const sessions = loaded.sessions
-  // Legend and colors come from the unfiltered week so filters never repaint survivors.
+  // Legend and colors come from the unfiltered period so filters never repaint survivors.
   const legend = useMemo(() => buildLegend(sessions, axis), [sessions, axis])
   const colorOf = useMemo(() => colorLookup(legend, axis), [legend, axis])
   const projects = useMemo(
@@ -178,7 +191,7 @@ export default function App() {
   }
 
   const empty =
-    loaded.week === weekStart.getTime()
+    loaded.key === periodKey
       ? emptyState({
           visible: visible.length,
           total: loaded.total,
@@ -187,7 +200,8 @@ export default function App() {
         })
       : null
 
-  const isThisWeek = startOfWeek(new Date(now)).getTime() === weekStart.getTime()
+  const isCurrent = isCurrentPeriod(span, anchor, now)
+  const timeGrid = view === 'calendar' && span !== 'month'
 
   return (
     <div className="app">
@@ -257,18 +271,25 @@ export default function App() {
       </div>
 
       <div className="weeknav">
-        <button className="btn" onClick={() => setWeekStart(startOfWeek(new Date()))} disabled={isThisWeek}>
-          今週
+        <div className="segmented" role="tablist" aria-label="期間">
+          {SPANS.map((x) => (
+            <button key={x.key} className={span === x.key ? 'on' : ''} onClick={() => setSpan(x.key)} role="tab">
+              {x.label}
+            </button>
+          ))}
+        </div>
+        <button className="btn" onClick={() => setAnchor(new Date())} disabled={isCurrent}>
+          {spanInfo.current}
         </button>
-        <button className="icon-btn" onClick={() => shiftWeek(-1)} aria-label="前の週">
+        <button className="icon-btn" onClick={() => shift(-1)} aria-label={`前の${spanInfo.unit}`}>
           ◀
         </button>
-        <button className="icon-btn" onClick={() => shiftWeek(1)} aria-label="次の週">
+        <button className="icon-btn" onClick={() => shift(1)} aria-label={`次の${spanInfo.unit}`}>
           ▶
         </button>
-        <span className="week-label">{weekLabel(weekStart)}</span>
+        <span className="week-label">{periodLabel(span, anchor)}</span>
         <span className="muted">{visible.length}セッション</span>
-        {view === 'calendar' && (
+        {timeGrid && (
           <span className="zoom">
             <button className="icon-btn" onClick={() => zoom(-1)} aria-label="縮小">
               −
@@ -307,7 +328,8 @@ export default function App() {
             <EmptyState
               state={empty}
               health={health}
-              onJump={(ms) => setWeekStart(startOfWeek(new Date(ms)))}
+              periodUnit={spanInfo.unit}
+              onJump={(ms) => setAnchor(new Date(ms))}
               onClearFilters={() => {
                 setStatusFilter(new Set())
                 setProject('')
@@ -316,11 +338,22 @@ export default function App() {
           )}
           {loadError ? (
             <div className="empty">API に接続できません（agent-history serve は起動していますか）: {loadError}</div>
+          ) : view === 'calendar' && span === 'month' ? (
+            <MonthView
+              sessions={visible}
+              period={period}
+              now={now}
+              colorOf={colorOf}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onOpenDay={openDay}
+            />
           ) : view === 'calendar' ? (
             <CalendarView
               sessions={visible}
-              weekStart={weekStart}
-              loadedWeek={loaded.week}
+              days={period.days}
+              periodKey={periodKey}
+              loadedKey={loaded.key}
               now={now}
               hourHeight={hourPx}
               colorOf={colorOf}

@@ -27,3 +27,12 @@ export function shortPath(path: string, cwd: string | null): string {
   }
   return path.startsWith(cwd + '/') ? path.slice(cwd.length + 1) : path
 }
+
+/** Compact active time for month cells: "20分", "1.5h", "10h". */
+export function fmtHours(ms: number): string {
+  if (ms <= 0) return ''
+  const minutes = Math.round(ms / 60_000)
+  if (minutes < 60) return `${minutes}分`
+  const hours = minutes / 60
+  return `${hours >= 10 ? Math.round(hours) : Math.round(hours * 10) / 10}h`
+}

@@ -1,18 +1,22 @@
 import { addDays } from './time'
 
 export interface DayPiece {
-  day: number // 0 = Monday
+  day: number // index into the drawn days
   start: number
   end: number
 }
 
-/** Clip segments to the 7 local days of the week starting at `weekStartMs`. */
-export function splitIntoDays(segments: [number, number][], weekStartMs: number): DayPiece[] {
-  const weekStart = new Date(weekStartMs)
-  const bounds = Array.from({ length: 8 }, (_, i) => addDays(weekStart, i).getTime())
+/** Clip segments to `dayCount` consecutive local days starting at `startMs` (local midnight). */
+export function splitIntoDays(
+  segments: [number, number][],
+  startMs: number,
+  dayCount = 7,
+): DayPiece[] {
+  const first = new Date(startMs)
+  const bounds = Array.from({ length: dayCount + 1 }, (_, i) => addDays(first, i).getTime())
   const pieces: DayPiece[] = []
   for (const [s, e] of segments) {
-    for (let day = 0; day < 7; day++) {
+    for (let day = 0; day < dayCount; day++) {
       const ds = bounds[day]
       const de = bounds[day + 1]
       const overlaps = s < de && (e > ds || (s === e && s >= ds))
