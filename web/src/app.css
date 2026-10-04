@@ -931,3 +931,51 @@ ol.turns {
   padding-left: 4px;
   font-size: 11px;
 }
+
+/* ---------- context compaction markers ---------- */
+.compaction-icon {
+  color: var(--ink-2);
+  font-weight: 700;
+}
+.compaction-mark {
+  position: absolute;
+  left: -3px;
+  right: 0;
+  height: 0;
+  border-top: 2px dashed var(--ink);
+  opacity: 0.75;
+  pointer-events: none;
+}
+.compaction-mark::before {
+  content: '⟲';
+  position: absolute;
+  right: 1px;
+  top: -8px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.compaction-mark.manual {
+  border-top-style: dotted;
+}
+.month-chip-compact {
+  flex: none;
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.compaction-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+  border-top-style: dashed !important;
+}
+.compaction-toggle {
+  margin-left: auto;
+}

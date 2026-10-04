@@ -2,6 +2,7 @@
 
 from agent_history.model import (
     Commit,
+    Compaction,
     FileChange,
     ParsedSession,
     RateLimitSample,
@@ -68,5 +69,15 @@ def make_parsed(sid="claude:a", start=10 * H, subagent=False, parent=None) -> Pa
         ],
         rate_limits=[
             RateLimitSample(ts=start, limit_id="codex", window_minutes=300, used_percent=12.0)
+        ],
+        compactions=[
+            Compaction(
+                ts=start + H // 2,
+                turn_key="t1",
+                trigger="auto",
+                pre_tokens=900_000,
+                post_tokens=20_000,
+                duration_ms=60_000,
+            )
         ],
     )

@@ -8,6 +8,7 @@ from agent_history.diffstat import count_unified_diff
 from agent_history.gitdetect import extract_commit_sha, is_commit_command
 from agent_history.model import (
     Commit,
+    Compaction,
     FileChange,
     ParsedSession,
     RateLimitSample,
@@ -92,6 +93,8 @@ def parse_codex_rollout(
     rate_limits: list[RateLimitSample] = []
     last_rate: dict[tuple[str, int], float] = {}
     points: list[int] = []
+    compactions: list[Compaction] = []
+    last_input_tokens: int | None = None  # context size of the latest response
     current: Turn | None = None
     inherited = False
     last_total: int | None = None
@@ -141,6 +144,22 @@ def parse_codex_rollout(
         if inherited:
             continue
 
+        if rtype == "compacted":
+            turn = own_turn(ts)
+            points.append(ts)
+            # Codex records no trigger: a compaction right after a "/compact" request is manual,
+            # anything else happened because the window filled up.
+            manual = (turn.prompt or "").strip().startswith("/compact")
+            compactions.append(
+                Compaction(
+                    ts=ts,
+                    turn_key=turn.key,
+                    trigger="manual" if manual else "auto",
+                    pre_tokens=last_input_tokens,
+                )
+            )
+            continue
+
         if rtype == "turn_context":
             if payload.get("model"):
                 own_turn(ts).model = payload["model"]
@@ -168,6 +187,11 @@ def parse_codex_rollout(
                 if is_commit_command(cmd) and str(item.get("exit_code")) == "0":
                     sha = extract_commit_sha(item.get("aggregated_output") or item.get("stdout"))
                     commits.append(Commit(kind="commit", ts=ts, turn_key=turn.key, sha=sha))
+            elif itype == "ContextCompaction":
+                started, completed = payload.get("started_at_ms"), payload.get("completed_at_ms")
+                pending = [c for c in compactions if c.duration_ms is None]
+                if pending and isinstance(started, int) and isinstance(completed, int):
+                    pending[-1].duration_ms = completed - started
             elif itype == "FileChange":
                 for fpath, change in (item.get("changes") or {}).items():
                     added, removed = count_unified_diff((change or {}).get("unified_diff"))
@@ -180,7 +204,9 @@ def parse_codex_rollout(
             info = payload.get("info") or {}
             total = (info.get("total_token_usage") or {}).get("total_tokens")
             if total is not None and total != last_total:
-                turn.tokens.add(_usage(info.get("last_token_usage") or {}))
+                last_usage = info.get("last_token_usage") or {}
+                turn.tokens.add(_usage(last_usage))
+                last_input_tokens = last_usage.get("input_tokens", last_input_tokens)
                 last_total = total
             limits = payload.get("rate_limits") or {}
             for window in ("primary", "secondary"):
@@ -245,4 +271,5 @@ def parse_codex_rollout(
         commits=commits,
         file_changes=files,
         rate_limits=rate_limits,
+        compactions=compactions,
     )

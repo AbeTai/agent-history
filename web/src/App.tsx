@@ -49,6 +49,7 @@ export default function App() {
   const [hourPx, setHourPx] = usePref('hourPx', DEFAULT_HOUR_PX)
   const [sort, setSort] = usePref<SortKey>('sort', 'newest')
   const [showSubagents, setShowSubagents] = usePref('subagents', false)
+  const [showCompactions, setShowCompactions] = usePref('compactions', true)
   const [statusFilter, setStatusFilter] = useState<Set<Status>>(new Set())
   const [project, setProject] = useState('')
 
@@ -320,6 +321,13 @@ export default function App() {
             </span>
           ))}
         </div>
+        <label className="check-label compaction-toggle" title="コンテキストの自動圧縮（auto compact）が走った位置に印を付けます">
+          <input type="checkbox" checked={showCompactions} onChange={(e) => setShowCompactions(e.target.checked)} />
+          <span className="compaction-icon" aria-hidden>
+            ⟲
+          </span>
+          圧縮を表示
+        </label>
       </div>
 
       <main className={`body${selectedId ? ' with-detail' : ''}`}>
@@ -344,6 +352,7 @@ export default function App() {
               period={period}
               now={now}
               colorOf={colorOf}
+              showCompactions={showCompactions}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onOpenDay={openDay}
@@ -357,6 +366,7 @@ export default function App() {
               now={now}
               hourHeight={hourPx}
               colorOf={colorOf}
+              showCompactions={showCompactions}
               selectedId={selectedId}
               onSelect={setSelectedId}
             />

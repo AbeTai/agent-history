@@ -13,13 +13,14 @@ interface Props {
   period: Period
   now: number
   colorOf: (s: SessionSummary) => string
+  showCompactions: boolean
   selectedId: string | null
   onSelect: (id: string) => void
   /** Open the day view for a date (date number or "+N件"). */
   onOpenDay: (day: Date) => void
 }
 
-export function MonthView({ sessions, period, now, colorOf, selectedId, onSelect, onOpenDay }: Props) {
+export function MonthView({ sessions, period, now, colorOf, showCompactions, selectedId, onSelect, onOpenDay }: Props) {
   const days = useMemo(() => summarizeDays(sessions, period.days), [sessions, period.days])
   const inMonth = (d: Date) =>
     !period.monthStart || (d >= period.monthStart && period.monthEnd !== undefined && d < period.monthEnd)
@@ -57,7 +58,7 @@ export function MonthView({ sessions, period, now, colorOf, selectedId, onSelect
                 )}
               </div>
               <ul className="month-items">
-                {items.slice(0, hidden > 0 ? MAX_CHIPS - 1 : MAX_CHIPS).map(({ session: s, start, activeMs: ms, continued }) => (
+                {items.slice(0, hidden > 0 ? MAX_CHIPS - 1 : MAX_CHIPS).map(({ session: s, start, activeMs: ms, continued, compactions }) => (
                   <li key={s.id}>
                     <button
                       className={`month-chip${s.id === selectedId ? ' selected' : ''}`}
@@ -67,6 +68,11 @@ export function MonthView({ sessions, period, now, colorOf, selectedId, onSelect
                     >
                       <span className="month-chip-time">{continued ? '↳' : fmtClock(start)}</span>
                       <span className="month-chip-title">{s.title ?? s.native_id.slice(0, 8)}</span>
+                      {showCompactions && compactions > 0 && (
+                        <span className="month-chip-compact" aria-label={`圧縮 ${compactions}回`}>
+                          ⟲{compactions}
+                        </span>
+                      )}
                     </button>
                   </li>
                 ))}

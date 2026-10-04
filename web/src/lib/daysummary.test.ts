@@ -5,8 +5,8 @@ import type { SessionSummary } from './types'
 const H = 3_600_000
 const d0 = new Date(2026, 9, 1).getTime()
 const days = [new Date(2026, 9, 1), new Date(2026, 9, 2)]
-const s = (id: string, segments: [number, number][]) =>
-  ({ id, segments, started_at: segments[0]?.[0] ?? 0 }) as unknown as SessionSummary
+const s = (id: string, segments: [number, number][], compactions: [number, string | null][] = []) =>
+  ({ id, segments, started_at: segments[0]?.[0] ?? 0, compaction_marks: compactions }) as unknown as SessionSummary
 
 describe('summarizeDays', () => {
   it('lists sessions active each day ordered by first activity, with active time', () => {
@@ -27,6 +27,12 @@ describe('summarizeDays', () => {
     const [day1, day2] = summarizeDays([c], days)
     expect(day1.items[0].continued).toBe(false)
     expect(day2.items[0].continued).toBe(true)
+  })
+  it('counts compactions per session and day', () => {
+    const a = s('a', [[d0 + 10 * H, d0 + 26 * H]], [[d0 + 11 * H, 'auto'], [d0 + 12 * H, 'auto'], [d0 + 25 * H, 'auto']])
+    const [day1, day2] = summarizeDays([a], days)
+    expect([day1.items[0].compactions, day1.compactions]).toEqual([2, 2])
+    expect([day2.items[0].compactions, day2.compactions]).toEqual([1, 1])
   })
   it('days without sessions are empty', () => {
     expect(summarizeDays([], days).map((d) => d.items.length)).toEqual([0, 0])

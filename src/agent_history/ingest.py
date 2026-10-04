@@ -16,6 +16,10 @@ from agent_history.sources.claude import (
 from agent_history.sources.codex import load_thread_names, parse_codex_rollout
 from agent_history.store import Store
 
+# Bump when parsers start extracting something new: every file is re-read once on the next run.
+# 2: context compactions; compaction summaries are no longer counted as prompts.
+PARSER_VERSION = 2
+
 # src/agent_history/ingest.py -> repository root (`uv sync` installs the project in editable mode)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -87,7 +91,7 @@ class IngestReport:
 
 def _stat_fingerprint(path: Path) -> str:
     st = path.stat()
-    return f"{st.st_size}:{st.st_mtime_ns}"
+    return f"v{PARSER_VERSION}:{st.st_size}:{st.st_mtime_ns}"
 
 
 def _claude_files(config: Config) -> list[tuple[Path, Path | None]]:

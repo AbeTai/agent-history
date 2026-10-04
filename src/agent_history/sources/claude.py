@@ -7,7 +7,15 @@ from pathlib import Path
 
 from agent_history.diffstat import count_structured_patch
 from agent_history.gitdetect import extract_commit_sha, is_commit_command
-from agent_history.model import Commit, FileChange, ParsedSession, Session, Tokens, Turn
+from agent_history.model import (
+    Commit,
+    Compaction,
+    FileChange,
+    ParsedSession,
+    Session,
+    Tokens,
+    Turn,
+)
 from agent_history.platforms import is_pid_alive
 from agent_history.project import project_name
 from agent_history.segments import DEFAULT_GAP_MS, split_segments
@@ -47,6 +55,8 @@ def _classify_user(rec: dict) -> tuple[str, str | None] | None:
     """
     if rec.get("toolUseResult") is not None or rec.get("isMeta"):
         return None
+    if rec.get("isCompactSummary"):
+        return "other", None  # the summary Claude Code injects after compacting
     content = rec.get("message", {}).get("content")
     if isinstance(content, list) and content and content[0].get("type") == "tool_result":
         return None
@@ -85,6 +95,7 @@ def parse_claude_session(
     turns: list[Turn] = []
     commits: list[Commit] = []
     files: list[FileChange] = []
+    compactions: list[Compaction] = []
     points: list[int] = []
     seen_message_ids: set[str] = set()
     bash_commands: dict[str, str] = {}
@@ -117,6 +128,20 @@ def parse_claude_session(
                     url=rec.get("prUrl"),
                 )
             )
+        elif rtype == "system" and rec.get("subtype") == "compact_boundary":
+            meta_c = rec.get("compactMetadata") or {}
+            c_ts = iso_to_ms(rec.get("timestamp"))
+            if c_ts is not None:
+                compactions.append(
+                    Compaction(
+                        ts=c_ts,
+                        turn_key=turns[-1].key if turns else None,
+                        trigger=meta_c.get("trigger"),
+                        pre_tokens=meta_c.get("preTokens"),
+                        post_tokens=meta_c.get("postTokens"),
+                        duration_ms=meta_c.get("durationMs"),
+                    )
+                )
         if rtype not in ("user", "assistant"):
             continue
 
@@ -258,6 +283,7 @@ def parse_claude_session(
         segments=split_segments(points, gap_ms),
         commits=unique_commits,
         file_changes=files,
+        compactions=compactions,
     )
 
 

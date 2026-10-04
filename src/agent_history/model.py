@@ -75,6 +75,18 @@ class FileChange:
 
 
 @dataclass
+class Compaction:
+    """The context was summarised to free up the window (Claude Code / Codex "compact")."""
+
+    ts: int
+    turn_key: str | None = None
+    trigger: str | None = None  # auto | manual
+    pre_tokens: int | None = None
+    post_tokens: int | None = None
+    duration_ms: int | None = None
+
+
+@dataclass
 class RateLimitSample:
     ts: int
     limit_id: str
@@ -92,3 +104,4 @@ class ParsedSession:
     commits: list[Commit] = field(default_factory=list)
     file_changes: list[FileChange] = field(default_factory=list)
     rate_limits: list[RateLimitSample] = field(default_factory=list)
+    compactions: list[Compaction] = field(default_factory=list)

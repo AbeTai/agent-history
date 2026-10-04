@@ -77,6 +77,16 @@ CREATE TABLE IF NOT EXISTS file_changes (
     removed INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS file_changes_session ON file_changes(session_id);
+CREATE TABLE IF NOT EXISTS compactions (
+    session_id TEXT NOT NULL,
+    turn_key TEXT,
+    ts INTEGER NOT NULL,
+    trigger TEXT,
+    pre_tokens INTEGER,
+    post_tokens INTEGER,
+    duration_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS compactions_session ON compactions(session_id);
 CREATE TABLE IF NOT EXISTS rate_limits (
     ts INTEGER NOT NULL,
     limit_id TEXT NOT NULL,
@@ -95,7 +105,7 @@ CREATE TABLE IF NOT EXISTS ingested_files (
 );
 """
 
-CHILD_TABLES = ("turns", "segments", "commits", "file_changes")
+CHILD_TABLES = ("turns", "segments", "commits", "file_changes", "compactions")
 
 SUMMARY_SQL = """
 SELECT s.*,
@@ -118,7 +128,8 @@ SELECT s.*,
   (SELECT coalesce(sum(added), 0) FROM file_changes f WHERE f.session_id = s.id) AS lines_added,
   (SELECT coalesce(sum(removed), 0) FROM file_changes f WHERE f.session_id = s.id)
       AS lines_removed,
-  (SELECT count(*) FROM sessions c WHERE c.parent_id = s.id) AS subagent_count
+  (SELECT count(*) FROM sessions c WHERE c.parent_id = s.id) AS subagent_count,
+  (SELECT count(*) FROM compactions k WHERE k.session_id = s.id) AS compaction_count
 FROM sessions s
 """
 
@@ -218,6 +229,13 @@ class Store:
                 [(s.id, f.turn_key, f.ts, f.path, f.added, f.removed) for f in parsed.file_changes],
             )
             self.conn.executemany(
+                "INSERT INTO compactions VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (s.id, c.turn_key, c.ts, c.trigger, c.pre_tokens, c.post_tokens, c.duration_ms)
+                    for c in parsed.compactions
+                ],
+            )
+            self.conn.executemany(
                 "INSERT OR IGNORE INTO rate_limits VALUES (?, ?, ?, ?, ?, ?)",
                 [
                     (r.ts, r.limit_id, r.window_minutes, r.used_percent, r.resets_at, r.plan_type)
@@ -304,8 +322,22 @@ class Store:
             out[row[0]].append(row[1])
         return out
 
+    def _compactions_by_session(self, ids: list[str]) -> dict[str, list[list]]:
+        out: dict[str, list[list]] = {i: [] for i in ids}
+        if not ids:
+            return out
+        marks = ",".join("?" * len(ids))
+        for row in self.conn.execute(
+            f"SELECT session_id, ts, trigger FROM compactions WHERE session_id IN ({marks}) "
+            f"ORDER BY ts",
+            ids,
+        ):
+            out[row[0]].append([row[1], row[2]])
+        return out
+
     def _to_summaries(self, rows) -> list[dict]:
         ids = [r["id"] for r in rows]
+        compactions = self._compactions_by_session(ids)
         segments = self._segments_by_session(ids)
         models = self._models_by_session(ids)
         prompt_times = self._prompt_times_by_session(ids)
@@ -321,6 +353,7 @@ class Store:
             d["segments"] = segments[r["id"]]
             d["models"] = models[r["id"]]
             d["prompt_times"] = prompt_times[r["id"]]
+            d["compaction_marks"] = compactions[r["id"]]
             out.append(d)
         return out
 
@@ -355,6 +388,16 @@ class Store:
             for r in self.conn.execute(
                 "SELECT turn_key, ts, kind, sha, branch, url FROM commits "
                 "WHERE session_id = ? ORDER BY ts, rowid",
+                (session_id,),
+            )
+        ]
+
+    def compactions(self, session_id: str) -> list[dict]:
+        return [
+            dict(r)
+            for r in self.conn.execute(
+                "SELECT ts, turn_key, trigger, pre_tokens, post_tokens, duration_ms "
+                "FROM compactions WHERE session_id = ? ORDER BY ts",
                 (session_id,),
             )
         ]

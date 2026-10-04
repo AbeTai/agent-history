@@ -136,3 +136,11 @@ def test_archive_copy_failure_is_reported_and_retried(config, store, monkeypatch
     second = run_ingest(config, store, pid_alive=lambda pid: False)
     assert second.parsed == 1 and second.failed == []
     assert (config.archive_dir / "claude" / "-Users-me-dev-demo" / f"{CLAUDE_SID}.jsonl").exists()
+
+
+def test_parser_version_change_forces_reparse(config, store, monkeypatch):
+    # New parser features (e.g. compaction tracking) must reach files ingested earlier.
+    run_ingest(config, store, pid_alive=lambda pid: False)
+    assert run_ingest(config, store, pid_alive=lambda pid: False).parsed == 0
+    monkeypatch.setattr("agent_history.ingest.PARSER_VERSION", 999)
+    assert run_ingest(config, store, pid_alive=lambda pid: False).parsed == 3

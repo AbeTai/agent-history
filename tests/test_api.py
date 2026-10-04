@@ -241,3 +241,13 @@ def test_health_lists_history_sources(config, tmp_path):
     assert sources["codex"]["exists"] is True
     assert sources["claude"]["exists"] is False
     assert sources["claude"]["path"].endswith("projects")
+
+
+def test_compactions_in_list_and_detail(seeded):
+    c = client(seeded)
+    row = get_sessions(c)["claude:done"]
+    assert row["compaction_count"] == 1
+    assert row["compaction_marks"] == [[NOW - 28 * H + H // 2, "auto"]]
+    detail = c.get("/api/sessions/claude:done").json()
+    assert detail["compactions"][0]["trigger"] == "auto"
+    assert detail["compactions"][0]["pre_tokens"] == 900_000

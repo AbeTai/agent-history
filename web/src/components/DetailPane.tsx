@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { compactionDetail, compactionLabel, mergeTimeline } from '../lib/compaction'
 import { compact, shortPath, usd } from '../lib/format'
 import { fmtClock, fmtDateTime, fmtDuration, fmtRelative } from '../lib/time'
-import type { Check, Commit, SessionDetail, Turn } from '../lib/types'
+import type { Check, Commit, Compaction, SessionDetail, Turn } from '../lib/types'
 import { StatusBadge } from './StatusBadge'
 
 interface Props {
@@ -81,6 +82,22 @@ function TurnRow({ turn, commits }: { turn: Turn; commits: Commit[] }) {
   )
 }
 
+function CompactionRow({ c }: { c: Compaction }) {
+  const detail = compactionDetail(c)
+  return (
+    <li className="turn compaction-row">
+      <span className="turn-time">{fmtClock(c.ts)}</span>
+      <span className="compaction-icon" aria-hidden>
+        ⟲
+      </span>
+      <span className="compaction-text">
+        {compactionLabel(c.trigger)}（コンテキストを要約して継続）
+        {detail && <span className="muted"> · {detail}</span>}
+      </span>
+    </li>
+  )
+}
+
 export function DetailPane({ detail, loading, error, now, onClose, onSelect }: Props) {
   if (error) {
     return (
@@ -128,6 +145,13 @@ export function DetailPane({ detail, loading, error, now, onClose, onSelect }: P
           <div className="stat" title={d.cost_usd == null ? 'コスト記録なし（v1 は記録がある場合のみ表示）' : ''}>
             <span className="stat-label">コスト</span>
             <span className="stat-value">{usd(d.cost_usd)}</span>
+          </div>
+          <div
+            className="stat"
+            title={d.compactions.length ? '発言ログの ⟲ の位置で圧縮されました' : 'コンテキストの圧縮はありません'}
+          >
+            <span className="stat-label">圧縮</span>
+            <span className="stat-value">{d.compactions.length ? `${d.compactions.length}回` : '—'}</span>
           </div>
           <div className="stat">
             <span className="stat-label">モデル</span>
@@ -211,9 +235,13 @@ export function DetailPane({ detail, loading, error, now, onClose, onSelect }: P
       <section className="card">
         <h3>作業状況（発言ログ）</h3>
         <ol className="turns">
-          {d.turns.map((t) => (
-            <TurnRow key={t.key} turn={t} commits={commits.filter((c) => c.turn_key === t.key)} />
-          ))}
+          {mergeTimeline(d.turns, d.compactions).map((e) =>
+            e.kind === 'turn' ? (
+              <TurnRow key={e.turn.key} turn={e.turn} commits={commits.filter((c) => c.turn_key === e.turn.key)} />
+            ) : (
+              <CompactionRow key={`c-${e.compaction.ts}`} c={e.compaction} />
+            ),
+          )}
         </ol>
       </section>
     </aside>

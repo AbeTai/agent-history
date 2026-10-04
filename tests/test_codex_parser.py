@@ -137,3 +137,47 @@ def test_file_without_session_meta_returns_none(tmp_path):
 def test_subagent_flag(top, sub):
     assert top.session.is_subagent is False
     assert sub.session.is_subagent is True
+
+
+def test_compaction_inferred_auto_with_context_size_and_duration(top):
+    [c] = top.compactions
+    assert c.ts == ms("2026-09-28T01:00:41")
+    assert c.trigger == "auto"  # Codex records no trigger; no /compact request in this turn
+    assert c.pre_tokens == 200  # input tokens of the last response before compacting
+    assert c.post_tokens is None
+    assert c.duration_ms == 30_000
+    assert c.turn_key == top.turns[0].key
+
+
+def test_compaction_after_a_compact_request_is_manual(tmp_path):
+    rec = [
+        {
+            "timestamp": "2026-08-01T00:00:00.000Z",
+            "type": "session_meta",
+            "payload": {"id": "m", "timestamp": "2026-08-01T00:00:00.000Z", "cwd": "/tmp/m"},
+        },
+        {
+            "timestamp": "2026-08-01T00:00:01.000Z",
+            "type": "event_msg",
+            "payload": {"type": "task_started", "turn_id": "t1", "started_at": 1785542401},
+        },
+        {
+            "timestamp": "2026-08-01T00:00:01.000Z",
+            "type": "event_msg",
+            "payload": {
+                "type": "item_completed",
+                "thread_id": "m",
+                "turn_id": "t1",
+                "item": {"type": "UserMessage", "content": [{"type": "text", "text": "/compact"}]},
+            },
+        },
+        {"timestamp": "2026-08-01T00:00:09.000Z", "type": "compacted", "payload": {"message": ""}},
+    ]
+    f = tmp_path / "rollout-m.jsonl"
+    f.write_text("\n".join(json.dumps(r) for r in rec), encoding="utf-8")
+    [c] = parse_codex_rollout(f).compactions
+    assert c.trigger == "manual"
+
+
+def test_inherited_compactions_are_dropped(sub):
+    assert sub.compactions == []

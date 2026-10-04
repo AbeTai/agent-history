@@ -24,6 +24,7 @@ export function ListView({ sessions, colorOf, selectedId, onSelect }: Props) {
             <th className="num">依頼</th>
             <th className="num">コミット</th>
             <th className="num">ファイル</th>
+            <th className="num" title="コンテキストの圧縮回数">圧縮</th>
             <th className="num">トークン</th>
             <th className="num">長さ</th>
           </tr>
@@ -44,6 +45,7 @@ export function ListView({ sessions, colorOf, selectedId, onSelect }: Props) {
               <td className="num">{s.prompt_count}</td>
               <td className="num">{s.commit_count}</td>
               <td className="num">{s.file_count}</td>
+              <td className="num">{s.compaction_count || ''}</td>
               <td className="num">{compact(s.tokens.total)}</td>
               <td className="num nowrap">
                 {fmtDuration(s.segments.reduce((a, [x, y]) => a + (y - x), 0))}

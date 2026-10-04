@@ -252,3 +252,21 @@ def test_duplicate_commit_sha_counted_once(tmp_path):
     f = tmp_path / "s.jsonl"
     f.write_text("\n".join(json.dumps(x) for x in lines), encoding="utf-8")
     assert [c.sha for c in parse_claude_session(f).commits] == ["aaa1111"]
+
+
+def test_compaction_is_recorded_with_metadata(parsed):
+    [c] = parsed.compactions
+    assert c.ts == ms("2026-09-28T01:04:00")
+    assert (c.trigger, c.pre_tokens, c.post_tokens, c.duration_ms) == (
+        "auto",
+        969542,
+        18662,
+        285493,
+    )
+    assert c.turn_key == parsed.turns[0].key
+
+
+def test_injected_compaction_summary_is_not_a_human_prompt(parsed):
+    # The "This session is being continued..." message is written by Claude Code, not the user.
+    assert all("being continued" not in (t.prompt or "") for t in parsed.turns)
+    assert len(parsed.turns) == 3

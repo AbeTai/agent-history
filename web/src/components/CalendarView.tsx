@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { STATUS_LABEL } from '../lib/color'
+import { compactionLabel, marksInRange } from '../lib/compaction'
 import { bucketCounts, level } from '../lib/heatmap'
 import { layoutDay, splitIntoDays } from '../lib/layout'
 import { WEEKDAYS, addDays, fmtClock, fmtDuration } from '../lib/time'
@@ -19,6 +20,8 @@ interface Props {
   now: number
   hourHeight: number
   colorOf: (s: SessionSummary) => string
+  /** Draw a marker where the context was compacted. */
+  showCompactions: boolean
   selectedId: string | null
   onSelect: (id: string) => void
 }
@@ -39,6 +42,7 @@ export function CalendarView({
   now,
   hourHeight,
   colorOf,
+  showCompactions,
   selectedId,
   onSelect,
 }: Props) {
@@ -122,6 +126,7 @@ export function CalendarView({
                   const height = Math.max(MIN_BLOCK_PX, ((b.end - b.start) / H) * hourHeight)
                   const color = colorOf(s)
                   const widthPct = 100 / b.lanes
+                  const marks = showCompactions ? marksInRange(s.compaction_marks ?? [], b.start, b.end) : []
                   return (
                     <button
                       key={`${s.id}-${b.start}`}
@@ -136,8 +141,16 @@ export function CalendarView({
                       onClick={() => onSelect(s.id)}
                       onMouseMove={(e) => setHover({ session: s, start: b.start, end: b.end, x: e.clientX, y: e.clientY })}
                       onMouseLeave={() => setHover(null)}
-                      aria-label={`${s.title ?? s.id} ${fmtClock(b.start)}〜${fmtClock(b.end)}`}
+                      aria-label={`${s.title ?? s.id} ${fmtClock(b.start)}〜${fmtClock(b.end)}${marks.length ? `（圧縮 ${marks.length}回）` : ''}`}
                     >
+                      {marks.map(([ts, trigger]) => (
+                        <span
+                          key={ts}
+                          className={`compaction-mark${trigger === 'manual' ? ' manual' : ''}`}
+                          style={{ top: Math.min(height - 3, ((ts - b.start) / H) * hourHeight) }}
+                          aria-hidden
+                        />
+                      ))}
                       <span className="block-title">{s.title ?? s.native_id.slice(0, 8)}</span>
                       {height >= 34 && (
                         <span className="block-meta">
@@ -165,6 +178,15 @@ export function CalendarView({
             {hover.session.project} · {hover.session.source === 'claude' ? 'Claude Code' : 'Codex'} ·{' '}
             {STATUS_LABEL[hover.session.status]}
           </div>
+          {showCompactions &&
+            marksInRange(hover.session.compaction_marks ?? [], hover.start, hover.end).map(([ts, trigger]) => (
+              <div key={ts}>
+                <span className="compaction-icon" aria-hidden>
+                  ⟲
+                </span>{' '}
+                {compactionLabel(trigger)} {fmtClock(ts)}
+              </div>
+            ))}
         </div>
       )}
     </div>

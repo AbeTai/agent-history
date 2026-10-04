@@ -123,6 +123,7 @@ def create_app(
             turns=turns,
             commits=store.commits(session_id),
             files=store.files(session_id),
+            compactions=store.compactions(session_id),
             subagents=[_present(r, t) for r in store.subagent_summaries(session_id)],
         )
         return detail

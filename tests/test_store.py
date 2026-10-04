@@ -87,3 +87,21 @@ def test_reopen_keeps_data(tmp_path):
     s2 = Store(tmp_path / "h.db")
     assert len(s2.session_summaries(0, 100 * H)) == 1
     s2.close()
+
+
+def test_compactions_are_stored_and_summarised(store):
+    store.save(make_parsed())
+    store.save(make_parsed())  # idempotent
+    [row] = store.session_summaries(0, 100 * H)
+    assert row["compaction_count"] == 1
+    assert row["compaction_marks"] == [[10 * H + H // 2, "auto"]]
+    assert store.compactions("claude:a") == [
+        {
+            "ts": 10 * H + H // 2,
+            "turn_key": "t1",
+            "trigger": "auto",
+            "pre_tokens": 900_000,
+            "post_tokens": 20_000,
+            "duration_ms": 60_000,
+        }
+    ]

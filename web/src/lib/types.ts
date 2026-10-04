@@ -42,6 +42,9 @@ export interface SessionSummary {
   models: string[]
   segments: [number, number][]
   prompt_times: number[]
+  /** [timestamp, trigger] of each context compaction (markers on the calendar) */
+  compaction_marks: [number, string | null][]
+  compaction_count: number
   status: Status
 }
 
@@ -74,6 +77,15 @@ export interface FileStat {
   edits: number
 }
 
+export interface Compaction {
+  ts: number
+  turn_key: string | null
+  trigger: string | null
+  pre_tokens: number | null
+  post_tokens: number | null
+  duration_ms: number | null
+}
+
 export interface Check {
   key: string
   label: string
@@ -85,6 +97,7 @@ export interface SessionDetail extends SessionSummary {
   turns: Turn[]
   commits: Commit[]
   files: FileStat[]
+  compactions: Compaction[]
   subagents: SessionSummary[]
 }
 
